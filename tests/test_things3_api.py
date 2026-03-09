@@ -3,20 +3,23 @@
 
 """Module documentation goes here."""
 
-import unittest
-import json
 import configparser
+import json
+import unittest
+
 from things3 import things3, things3_api
 
 
 class Things3APICase(unittest.TestCase):
     """Class documentation goes here."""
 
-    things3_api = things3_api.Things3API()
-    things3 = things3.Things3(database="resources/demo.sqlite3")
-    things3.config = configparser.ConfigParser()
-    things3.config.read("tests/kanbanviewrc")
-    things3_api.things3 = things3
+    def setUp(self):
+        self.things3_api = things3_api.Things3API(database="resources/demo.sqlite3")
+        self.things3 = things3.Things3(database="resources/demo.sqlite3")
+        self.things3.config = configparser.ConfigParser()
+        self.things3.config.read("tests/kanbanviewrc")
+        self.things3_api.things3 = self.things3
+        self.things3_api.test_mode = "task"
 
     def test_today(self):
         """Test Today."""

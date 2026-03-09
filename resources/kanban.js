@@ -10,6 +10,49 @@ const canvas = document.getElementById('canvas')
 let mode = 'task'
 const config = {}
 
+function shouldUseAppBridge () {
+  return typeof window.pywebview !== 'undefined' &&
+    window.pywebview !== null &&
+    typeof window.pywebview.api !== 'undefined' &&
+    window.pywebview.api !== null &&
+    typeof window.pywebview.api.open_url === 'function'
+}
+
+function openExternalUrl (url) {
+  if (shouldUseAppBridge()) {
+    window.pywebview.api.open_url(url).catch(function (error) {
+      console.error('Failed to open external URL via app bridge', error)
+      if (typeof url === 'string' && url.startsWith('things:///')) {
+        window.location.href = url
+      }
+    })
+    return false
+  }
+  if (typeof url === 'string' && url.startsWith('things:///')) {
+    window.location.href = url
+    return false
+  }
+  window.open(url, '_blank')
+  return false
+}
+
+function isExternalUrl (url) {
+  return typeof url === 'string' &&
+    (url.startsWith('things:///') || url.startsWith('http://') || url.startsWith('https://'))
+}
+
+function handleExternalLink (event, url) {
+  if (!isExternalUrl(url)) {
+    return true
+  }
+  if (event != null) {
+    event.preventDefault()
+    event.stopPropagation()
+  }
+  openExternalUrl(url)
+  return false
+}
+
 function round (value, precision) {
   const multiplier = Math.pow(10, precision || 0)
   return Math.round(value * multiplier) / multiplier
@@ -62,7 +105,12 @@ function optionAdd (list, title, uuid, size) {
   const a = document.createElement('a')
   a.href = '#'
   a.setAttribute('id', uuid)
-  a.onclick = function () { highlight(event); kanbanFilterChange(this) }
+  a.onclick = function (event) {
+    event.preventDefault()
+    highlight(event)
+    kanbanFilterChange(this)
+    return false
+  }
   a.appendChild(li)
   list.appendChild(a)
 }
@@ -112,13 +160,13 @@ function rowsGet (rows) {
 
     if (row.uuid !== null) {
       task = `<a draggable='false' href='things:///show?id=${row.uuid}'
-                       target='_blank'>${task}
+                       onclick='return handleExternalLink(event, this.href)'>${task}
                     </a>`
     }
     if (row.context_uuid !== null) {
       context = `<a draggable='false' 
                           href='things:///show?id=${row.context_uuid}' 
-                          target='_blank'>
+                          onclick='return handleExternalLink(event, this.href)'>
                           ${row.context}
                         </a>`
     }
@@ -152,7 +200,7 @@ function columnAddPreview (cssclass, header) {
 
 function columnAdd (title, help, query, shortcut, color, size, rowHTML, icon) {
   if (query !== '') {
-    query = `href="things:///show?${query}"`
+    query = `href="things:///show?${query}" onclick="return handleExternalLink(event, this.href)"`
   }
   return `
         <div class='column' 
@@ -163,7 +211,6 @@ function columnAdd (title, help, query, shortcut, color, size, rowHTML, icon) {
             <div class='inner-column'>
                 <a draggable='false' 
                     ${query}
-                    target='_blank'
                     accesskey='${shortcut}'
                     title='⌃+⎇+${shortcut}'>
                     <h2 class='h2 bigger ${color}'><i class="fa fa-${icon}"></i> ${title}
@@ -590,11 +637,11 @@ async function statsShowUniverse () {
     })
     document.getElementById('canvas').addEventListener('click', function (evt) {
       const activePoint = chart.getDatasetAtEvent(evt)
+      if (activePoint.length === 0) {
+        return
+      }
       const uuid = activePoint[0]._options.rotation
-      const a = document.createElement('a')
-      a.target = '_blank'
-      a.href = `things:///show?id=${uuid}`
-      a.click()
+      openExternalUrl(`things:///show?id=${uuid}`)
     })
   })
 }
@@ -701,6 +748,22 @@ $(document).ready(function () {
   $('#listContainer').find('a').on('click', function (event) {
     highlight(event)
   })
+  document.addEventListener('click', function (event) {
+    const link = event.target.closest('a[href]')
+    if (link == null) {
+      return
+    }
+    const href = link.getAttribute('href')
+    if (href === '#' || href.startsWith('javascript:')) {
+      event.preventDefault()
+      return
+    }
+    if (href == null || !isExternalUrl(href)) {
+      return
+    }
+    event.preventDefault()
+    openExternalUrl(href)
+  }, true)
 
   $(document).keyup(function (e) {
     if (view === showPreferences) {
@@ -782,7 +845,7 @@ async function showPreferences () { // eslint-disable-line no-unused-vars
                  rowAdd(null, 'Eisenhower "C" Tag: <input class="pref-input" id="pref-C" onchange="javascript:savePreferences();">', 'Tasks with this tag will be shown in the C quadrant of the Eisenhower view (urgent and not important).', '', '', '') +
                  rowAdd(null, 'Eisenhower "D" Tag: <input class="pref-input" id="pref-D" onchange="javascript:savePreferences();">', 'Tasks with this tag will be shown in the D quadrant of the Eisenhower view (not urgent and not important).', '', '', '') +
                  rowAdd(null, 'Days for history view: <input class="pref-input" id="pref-statdays" onchange="javascript:savePreferences();">', 'How many days the statistic view should consider (currently the app has to be restarted to take this preference to take effect).', '', '', '')
-  const prefAPI = rowAdd(null, 'Expose API to network: <input class="pref-input" id="pref-expose" type="checkbox" onchange="javascript:savePreferences();">', 'If enabled, you can open the GUI by devices within your network, e.g. via an iPad by opening this link and saving it to the home screen: <i class="fa fa-external-link-alt"></i> <a id="host" href="#" target="_blank"></a>.', '', '', '') +
+  const prefAPI = rowAdd(null, 'Expose API to network: <input class="pref-input" id="pref-expose" type="checkbox" onchange="javascript:savePreferences();">', 'If enabled, you can open the GUI by devices within your network, e.g. via an iPad by opening this link and saving it to the home screen: <i class="fa fa-external-link-alt"></i> <a id="host" href="#"></a>.', '', '', '') +
                   rowAdd(null, 'PORT: <input class="pref-input" id="pref-port" onchange="javascript:savePreferences();">', 'TCP port the API is listening at.', '', '', '') +
                   rowAdd(null, '<input type="button" class="pref-input" id="pref-reset" onclick="javascript:alertPreferences();" value="Reset Configuration">', 'Current DB: ' + config.thingsdb, '', '', '') +
                   rowAdd(null, '<input type="button" class="pref-input" id="pref-feedback" onclick="javascript:alertFeedback();" value="Send Feedback">', 'Send debug reports or future requests', '', '', '')

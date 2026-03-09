@@ -5,9 +5,8 @@
 
 from __future__ import print_function
 
-
-import codecs
 from os import getcwd
+
 from things3.things3 import Things3
 
 # Basic variables
@@ -131,5 +130,5 @@ def main(output):
 
 
 if __name__ == "__main__":
-    with codecs.open(FILE_HTML, "w", "utf-8") as target:
+    with open(FILE_HTML, "w", encoding="utf-8") as target:
         main(target)

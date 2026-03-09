@@ -1,0 +1,89 @@
+[build-system]
+requires = ["setuptools>=80", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "things3-api"
+description = "CLI, API, web service, and Kanban app for Things 3."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+authors = [
+  {name = "Alexander Willner", email = "alex@willner.ws"},
+]
+keywords = ["things3", "kanban", "flask", "macos", "productivity"]
+classifiers = [
+  "Development Status :: 5 - Production/Stable",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Operating System :: MacOS :: MacOS X",
+  "Environment :: Console",
+  "Framework :: Flask",
+  "Natural Language :: English",
+]
+dependencies = [
+  "argcomplete>=3.6.3",
+  "flask>=3.1.2",
+  "pywebview>=6.1",
+  "things-py>=1.0.1",
+]
+dynamic = ["version"]
+
+[project.urls]
+Homepage = "https://kanbanview.app"
+Repository = "https://github.com/AlexanderWillner/KanbanView"
+Issues = "https://github.com/AlexanderWillner/KanbanView/issues"
+
+[project.scripts]
+things-cli = "things3.things3_cli:main"
+things-api = "things3.things3_api:main"
+things-kanban = "things3.things3_app:main"
+
+[tool.setuptools.dynamic]
+version = {attr = "things3.__version__"}
+
+[tool.setuptools.packages.find]
+include = ["things3*"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+ignore = ["E203"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["things3"]
+
+[tool.coverage.run]
+branch = true
+source = ["things3"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+
+[tool.ty.src]
+include = ["things3"]
+exclude = [
+  ".eggs",
+  ".git",
+  ".make-home",
+  ".uv-cache",
+  ".uv-data",
+  ".venv",
+  "build",
+  "dist",
+  "node_modules",
+]
+
+[dependency-groups]
+dev = [
+    "build>=1.4.0",
+    "coverage[toml]>=7.13.4",
+    "py2app>=0.28.10",
+    "ruff>=0.15.5",
+    "twine>=6.2.0",
+    "ty>=0.0.21",
+]

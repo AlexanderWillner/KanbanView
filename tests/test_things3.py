@@ -4,16 +4,17 @@
 """Module documentation goes here."""
 
 import unittest
+
 from things3.things3 import Things3
 
 
 class Things3Case(unittest.TestCase):
     """Class documentation goes here."""
 
-    FILEPATH = {"filepath": "resources/demo.sqlite3"}
+    database_path = "resources/demo.sqlite3"
 
     def setUp(self):
-        self.things3 = Things3(database="resources/demo.sqlite3")
+        self.things3 = Things3(database=self.database_path)
         self.things3.tag_mit = "😀"
         self.things3.tag_waiting = "Waiting"
         self.things3.tag_cleanup = "Cleanup"
@@ -24,13 +25,16 @@ class Things3Case(unittest.TestCase):
         self.things3.tag_d = "D"
         self.things3.stat_days = 365
 
+    @staticmethod
+    def titles(tasks):
+        """Extract task titles for readable assertions."""
+        return [task["title"] for task in tasks]
+
     def test_today(self):
         """Test Today."""
         tasks = self.things3.get_today()
         self.assertEqual(5, len(tasks))
-        titles = []
-        for task in tasks:
-            titles.append(task["title"])
+        titles = self.titles(tasks)
         self.assertIn("Today MIT task without a project", titles)
         self.assertIn("Today items are shown here", titles)
 
@@ -38,9 +42,7 @@ class Things3Case(unittest.TestCase):
         """Test Inbox."""
         tasks = self.things3.get_inbox()
         self.assertEqual(3, len(tasks))
-        titles = []
-        for task in tasks:
-            titles.append(task["title"])
+        titles = self.titles(tasks)
         self.assertIn("Currently Things 3 tasks are supported", titles)
         self.assertIn("This is a demo setup", titles)
         self.assertIn("New tasks are shown here", titles)
@@ -50,9 +52,7 @@ class Things3Case(unittest.TestCase):
         tasks = self.things3.get_upcoming()
         self.assertEqual(5, len(tasks))
         # things.py: was 6 in old version
-        titles = []
-        for task in tasks:
-            titles.append(task["title"])
+        titles = self.titles(tasks)
         self.assertIn("Waiting for this...", titles)
 
     def test_next(self):
@@ -106,7 +106,7 @@ class Things3Case(unittest.TestCase):
         self.assertEqual(4, len(tasks))
 
     def test_empty_projects(self):
-        """Test projects that are emptÿ."""
+        """Test projects that are empty."""
         tasks = self.things3.get_empty_projects()
         self.assertEqual(2, len(tasks))
 

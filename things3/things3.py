@@ -5,18 +5,22 @@
 
 from __future__ import print_function
 
-import sys
-from random import shuffle
-from datetime import datetime, timedelta
-import os
-from os import environ, path
 import configparser
-from pathlib import Path
+import glob
+import os
 import sqlite3
+import sys
 import webbrowser
+from contextlib import closing
+from datetime import datetime, timedelta
+from os import environ, path
+from pathlib import Path
+from random import shuffle
+from typing import Any, Callable
 
 # the new core library, migration ongoing
 import things
+
 from things3 import __version__
 
 # pylint: disable=R0904,R0902
@@ -142,6 +146,7 @@ class Things3:
 
         cfg = self.get_from_config(database, "THINGSDB")
         self.database = cfg if cfg else self.database
+        self.database = self.resolve_database_path(self.database)
         self.set_config("THINGSDB", self.database)
 
     def set_config(self, key, value, domain="DATABASE"):
@@ -171,6 +176,40 @@ class Things3:
             result = path.expanduser(self.config[domain][key])
         return result
 
+    @classmethod
+    def resolve_database_path(cls, database=None):
+        """Resolve the configured Things database, with a demo fallback."""
+        candidates = []
+        if database is not None:
+            candidates.append(database)
+        env_database = environ.get("THINGSDB")
+        if env_database:
+            candidates.append(env_database)
+        config_database = None
+        if "DATABASE" in cls.config and "THINGSDB" in cls.config["DATABASE"]:
+            config_database = path.expanduser(cls.config["DATABASE"]["THINGSDB"])
+        if config_database:
+            candidates.append(config_database)
+        candidates.append(cls.FILE_DB)
+
+        for candidate in candidates:
+            expanded = path.expanduser(str(candidate))
+            matches = glob.glob(expanded)
+            if matches:
+                return matches[0]
+            if path.exists(expanded):
+                return expanded
+
+        demo_database = path.join(
+            path.dirname(path.dirname(__file__)), "resources", "demo.sqlite3"
+        )
+        if path.exists(demo_database):
+            return demo_database
+
+        raise FileNotFoundError(
+            "Could not locate a Things database. Set THINGSDB explicitly."
+        )
+
     @staticmethod
     def anonymize_string(string):
         """Scramble text."""
@@ -199,16 +238,28 @@ class Things3:
                 )
         return tasks
 
-    def defaults(self):
+    def defaults(self, database=None):
         """Some default options for the new API."""
-        return {
+        defaults = {
             "type": self.mode,
             "project": self.filter_project,
             "area": self.filter_area,
-            "filepath": self.database,
         }
+        if database is None:
+            defaults["filepath"] = self.database
+        else:
+            defaults["database"] = database
+        return defaults
 
-    def convert_new_things_lib(self, tasks):
+    def run_things_query(self, callback: Callable[[Any], list[dict[str, Any]]]):
+        """Run a things-py query and close the database deterministically."""
+        database = things.Database(filepath=self.database)
+        try:
+            return callback(database)
+        finally:
+            database.connection.close()
+
+    def convert_new_things_lib(self, tasks, database=None):
         """Convert tasks from new library to old expectations."""
         for task in tasks:
             task["context"] = (
@@ -221,44 +272,66 @@ class Things3:
             )
             task["due"] = task.get("deadline")
             task["started"] = task.get("start_date")
-            task["size"] = things.projects(
-                task["uuid"], count_only=True, filepath=self.database
-            )
+            kwargs: dict[str, Any] = {"count_only": True}
+            if database is None:
+                kwargs["filepath"] = self.database
+            else:
+                kwargs["database"] = database
+            task["size"] = things.projects(task["uuid"], **kwargs)
         tasks.sort(key=lambda task: task["title"] or "", reverse=False)
         tasks = self.anonymize_tasks(tasks)
         return tasks
 
     def get_inbox(self):
         """Get tasks from inbox."""
-        tasks = things.inbox(**self.defaults())
-        tasks = self.convert_new_things_lib(tasks)
-        return tasks
+        return self.run_things_query(
+            lambda database: self.convert_new_things_lib(
+                things.inbox(**self.defaults(database=database)), database=database
+            )
+        )
 
     def get_today(self):
         """Get tasks from today."""
-        tasks = things.today(**self.defaults())
-        tasks = self.convert_new_things_lib(tasks)
+        tasks = self.run_things_query(
+            lambda database: self.convert_new_things_lib(
+                things.today(**self.defaults(database=database)), database=database
+            )
+        )
         tasks.sort(key=lambda task: task.get("started", ""), reverse=True)
         tasks.sort(key=lambda task: task.get("todayIndex", ""), reverse=False)
         return tasks
 
     def get_task(self, area=None, project=None):
         """Get tasks."""
-        tasks = things.tasks(area=area, project=project, filepath=self.database)
-        tasks = self.convert_new_things_lib(tasks)
-        return tasks
+        return self.run_things_query(
+            lambda database: self.convert_new_things_lib(
+                things.tasks(
+                    type=self.mode,
+                    area=area,
+                    project=project,
+                    database=database,
+                ),
+                database=database,
+            )
+        )
 
     def get_someday(self):
         """Get someday tasks."""
-        tasks = things.someday(**self.defaults())
-        tasks = self.convert_new_things_lib(tasks)
+        tasks = self.run_things_query(
+            lambda database: self.convert_new_things_lib(
+                things.someday(**self.defaults(database=database)), database=database
+            )
+        )
         tasks.sort(key=lambda task: task["deadline"] or "", reverse=True)
         return tasks
 
     def get_upcoming(self):
         """Get upcoming tasks."""
-        tasks = things.upcoming(**self.defaults())
-        tasks = self.convert_new_things_lib(tasks)
+        tasks = self.run_things_query(
+            lambda database: self.convert_new_things_lib(
+                things.upcoming(**self.defaults(database=database)), database=database
+            )
+        )
         tasks.sort(key=lambda task: task["started"] or "", reverse=False)
         return tasks
 
@@ -275,8 +348,12 @@ class Things3:
     def get_tag(self, tag):
         """Get task with specific tag."""
         try:
-            tasks = things.tasks(tag=tag, **self.defaults())
-            tasks = self.convert_new_things_lib(tasks)
+            tasks = self.run_things_query(
+                lambda database: self.convert_new_things_lib(
+                    things.tasks(tag=tag, **self.defaults(database=database)),
+                    database=database,
+                )
+            )
         except ValueError:
             tasks = []
         if tag in [self.tag_waiting]:
@@ -285,9 +362,12 @@ class Things3:
 
     def get_tag_today(self, tag):
         """Get today tasks with specific tag."""
-        tasks = things.today(tag=tag, **self.defaults())
-        tasks = self.convert_new_things_lib(tasks)
-        return tasks
+        return self.run_things_query(
+            lambda database: self.convert_new_things_lib(
+                things.today(tag=tag, **self.defaults(database=database)),
+                database=database,
+            )
+        )
 
     def get_anytime(self):
         """Get anytime tasks."""
@@ -337,15 +417,20 @@ class Things3:
 
     def get_completed(self):
         """Get completed tasks."""
-        tasks = things.completed(**self.defaults())
-        tasks = self.convert_new_things_lib(tasks)
-        return tasks
+        return self.run_things_query(
+            lambda database: self.convert_new_things_lib(
+                things.completed(**self.defaults(database=database)),
+                database=database,
+            )
+        )
 
     def get_cancelled(self):
         """Get cancelled tasks."""
-        tasks = things.canceled(**self.defaults())
-        tasks = self.convert_new_things_lib(tasks)
-        return tasks
+        return self.run_things_query(
+            lambda database: self.convert_new_things_lib(
+                things.canceled(**self.defaults(database=database)), database=database
+            )
+        )
 
     def get_trashed(self):
         """Get trashed tasks."""
@@ -358,34 +443,55 @@ class Things3:
 
     def get_projects(self, area=None):
         """Get projects."""
-        projects = things.projects(area=area, filepath=self.database)
-        projects = self.convert_new_things_lib(projects)
+        projects = self.run_things_query(
+            lambda database: self.convert_new_things_lib(
+                things.projects(area=area, database=database),
+                database=database,
+            )
+        )
         for project in projects:
-            project["size"] = things.todos(
-                project=project["uuid"], count_only=True, filepath=self.database
+            project["size"] = self.run_things_query(
+                lambda database: things.todos(
+                    project=project["uuid"],
+                    count_only=True,
+                    database=database,
+                )
             )
         return projects
 
     def get_areas(self):
         """Get areas."""
-        areas = things.areas(filepath=self.database)
-        areas = self.convert_new_things_lib(areas)
+        areas = self.run_things_query(
+            lambda database: self.convert_new_things_lib(
+                things.areas(database=database), database=database
+            )
+        )
         for area in areas:
-            area["size"] = things.todos(
-                area=area["uuid"], count_only=True, filepath=self.database
+            area["size"] = self.run_things_query(
+                lambda database: things.todos(
+                    area=area["uuid"],
+                    count_only=True,
+                    database=database,
+                )
             )
         return areas
 
     def get_all(self):
         """Get all tasks."""
-        tasks = things.tasks(**self.defaults())
-        tasks = self.convert_new_things_lib(tasks)
-        return tasks
+        return self.run_things_query(
+            lambda database: self.convert_new_things_lib(
+                things.tasks(**self.defaults(database=database)), database=database
+            )
+        )
 
     def get_due(self):
         """Get due tasks."""
-        tasks = things.deadlines(**self.defaults())
-        tasks = self.convert_new_things_lib(tasks)
+        tasks = self.run_things_query(
+            lambda database: self.convert_new_things_lib(
+                things.deadlines(**self.defaults(database=database)),
+                database=database,
+            )
+        )
         tasks.sort(key=lambda task: task["deadline"] or "", reverse=False)
         return tasks
 
@@ -508,9 +614,11 @@ class Things3:
 
     def get_minutes_today(self):
         """Count the planned minutes for today."""
-
-        tasks = things.today(**self.defaults())
-        tasks = self.convert_new_things_lib(tasks)
+        tasks = self.run_things_query(
+            lambda database: self.convert_new_things_lib(
+                things.today(**self.defaults(database=database)), database=database
+            )
+        )
         minutes = 0
         for task in tasks:
             for tag in task.get("tags", []):
@@ -524,9 +632,16 @@ class Things3:
         """Tasks logged recently with a specific tag."""
 
         stop_date = (datetime.today() - timedelta(days=66)).strftime("%Y-%m-%d")
-        tasks = things.logbook(**self.defaults(), stop_date=stop_date, tag=tag)
-        tasks = self.convert_new_things_lib(tasks)
-        return tasks
+        return self.run_things_query(
+            lambda database: self.convert_new_things_lib(
+                things.logbook(
+                    **self.defaults(database=database),
+                    stop_date=stop_date,
+                    tag=tag,
+                ),
+                database=database,
+            )
+        )
 
     def get_cleanup(self):
         """Tasks and projects that need work."""
@@ -656,13 +771,16 @@ Any additional information:
             print(self.database)
             print(sql)
         try:
-            connection = sqlite3.connect(  # pylint: disable=E1101
-                "file:" + self.database + "?mode=ro", uri=True
-            )
-            connection.row_factory = Things3.dict_factory
-            cursor = connection.cursor()
-            cursor.execute(sql)
-            tasks = cursor.fetchall()
+            with closing(
+                sqlite3.connect(  # pylint: disable=E1101
+                    "file:" + self.database + "?mode=ro", uri=True
+                )
+            ) as connection:
+                connection.row_factory = Things3.dict_factory
+                cursor = connection.cursor()
+                cursor.execute(sql)
+                tasks = cursor.fetchall()
+                cursor.close()
             tasks = self.anonymize_tasks(tasks)
             if self.debug:
                 for task in tasks:
@@ -703,7 +821,6 @@ Any additional information:
         "lint": get_lint,
         "empty": get_empty_projects,
         "cleanup": get_cleanup,
-        "seinfeld": get_seinfeld,
         "top-proj": get_largest_projects,
         "stats-day": get_daystats,
         "stats-min-today": get_minutes_today,

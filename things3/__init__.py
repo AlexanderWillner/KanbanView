@@ -1,6 +1,5 @@
 """Simple read-only CLI, API, Web Service and Kanban App for Things 3."""
 
-
 __author__ = "Alexander Willner"
 __copyright__ = "2023 Alexander Willner"
 __credits__ = ["Alexander Willner"]

@@ -5,14 +5,15 @@
 
 from __future__ import print_function
 
-import sys
-from os import getcwd
 import json
 import socket
-from flask import Flask
-from flask import Response
-from flask import request
+import sys
+from os import getcwd
+from typing import Any, Callable, cast
+
+from flask import Flask, Response, request
 from werkzeug.serving import make_server
+
 from things3.things3 import Things3
 
 
@@ -92,7 +93,10 @@ class Things3API:
     def api(self, command):
         """Return database as JSON strings."""
         if command in self.things3.functions:
-            func = self.things3.functions[command]
+            func = cast(
+                Callable[[Things3], list[dict[str, Any]]],
+                self.things3.functions[command],
+            )
             self.mode_selector()
             data = func(self.things3)
             self.things3.mode_task()

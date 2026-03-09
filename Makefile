@@ -1,19 +1,35 @@
 -include appstore/Makefile
 
-VERSION=$(shell grep "VERSION =" setup.py|awk -F '"' '{print $$2}')
+.PHONY: help deps-install install uninstall run open run-api open-api kill-api run-app cli test app doc clean auto-style lint code-style code-lint type-check css-lint js-lint html-lint code-count feedback pre-commit png jpg upload db-to-things db-from-things
+
+.DEFAULT_GOAL := help
+
 MAIN=things3_kanban
 APP=things3_app
 SERVER=things3_api
-SERVER_PORT=15000
 CLI=things3_cli
 SRC_CORE=things3
 SRC_TEST=tests
 DEST=kanban-static.html
+SERVER_PORT=15000
 DEST_SRV=http://localhost:$(SERVER_PORT)/kanban.html
-PYTHON=python3
-PYDOC=pydoc3
-PIP=pip3
-PIPENV=pipenv
+
+SYSTEM_PYTHON=python3
+UV=uv
+UV_CACHE_DIR=$(CURDIR)/.uv-cache
+UV_DATA_DIR=$(CURDIR)/.uv-data
+UV_PROJECT_ENVIRONMENT=$(CURDIR)/.venv
+RUNTIME_HOME=$(CURDIR)/.make-home
+UV_ENV=UV_CACHE_DIR=$(UV_CACHE_DIR) XDG_DATA_HOME=$(UV_DATA_DIR) UV_PROJECT_ENVIRONMENT=$(UV_PROJECT_ENVIRONMENT) HOME=$(RUNTIME_HOME)
+UV_RUN=$(UV_ENV) $(UV) run
+UV_SYNC=$(UV_ENV) $(UV) sync
+PYTHON=$(UV_RUN) python
+DEFAULT_THINGSDB=$(shell sh -c 'set -- "$$HOME"/Library/Group\ Containers/JLMPQHK86H.com.culturedcode.ThingsMac/ThingsData-*/Things\ Database.thingsdatabase/main.sqlite; if [ -e "$$1" ]; then printf "%s\n" "$$1"; elif [ -e resources/demo.sqlite3 ]; then printf "%s\n" resources/demo.sqlite3; fi')
+RUN_ENV=THINGSDB="$${THINGSDB:-$(DEFAULT_THINGSDB)}"
+
+define ensure_runtime_home
+	@mkdir -p $(RUNTIME_HOME)
+endef
 
 help:
 	@echo "CLI, API and Web Service for Things3."
@@ -22,121 +38,104 @@ help:
 	@echo " * Static Kanban : $(DEST)"
 	@echo " * Dynamic Kanban: $(DEST_SRV)"
 	@echo ""
-	@echo "Avaliable environment variables:"
+	@echo "Environment:"
 	@echo " * THINGSDB    - Path to database"
 	@echo " * TAG_WAITING - Tag for tasks you are waiting for"
-	@echo " * TAG_MIT     - Tag for most important tassk"
+	@echo " * TAG_MIT     - Tag for most important task"
 	@echo ""
 	@echo "Available commands:"
-	@echo " * run          - Run code in static mode."
-	@echo " * open         - Open GUI in static mode."
-	@echo " * run-api      - Run code in api mode."	
-	@echo " * open-api     - Open GUI in api mode in the browser."
-	@echo " * kill-api     - Kill code in api mode."
-	@echo " * run-app      - Run code in app mode."
-	@echo " * cli          - Run code in cli mode (use 'args' for arguments)."
-	@echo " * app          - Create KanbanView App."
-	@echo " * install      - Install the library and command line tools."
-	@echo " * uninstall    - Remove the library and command line tools."
-	@echo " * test         - Run unit tests and test coverage."
-	@echo " * doc          - Document code (pydoc)."
-	@echo " * clean        - Cleanup (e.g. pyc files)."
-	@echo " * auto-style   - Automatially style code (autopep8)."
-	@echo " * code-style   - Check code style (pycodestyle)."
-	@echo " * code-lint    - Check code lints (mypy, pylint, flake8)."
-	@echo " * css-lint     - Check CSS styke lints (csslint)."
-	@echo " * js-lint      - Check JS code lints (jslint)."
-	@echo " * html-lint    - Check HTML file lints (tidy)."
-	@echo " * code-count   - Count code lines (cloc)."
-	@echo " * deps-install - Install dependencies (see requirements.txt)."
-	@echo " * feedback     - Create a GitHub issue."
+	@echo " * deps-install - Create/update the uv environment (.venv)."
+	@echo " * run          - Render the static Kanban HTML."
+	@echo " * run-api      - Start the dynamic web service."
+	@echo " * run-app      - Start the macOS app wrapper."
+	@echo " * cli          - Run the CLI (use 'args=' for arguments)."
+	@echo " * test         - Run the unit test suite with coverage."
+	@echo " * code-style   - Check formatting with Ruff."
+	@echo " * code-lint    - Run Ruff lint checks."
+	@echo " * type-check   - Run ty type checking."
+	@echo " * lint         - Run formatting, linting, and type checking."
+	@echo " * auto-style   - Apply Ruff formatting and fixes."
+	@echo " * app          - Build the macOS app bundle via py2app."
+	@echo " * clean        - Remove generated artifacts."
+	@echo " * feedback     - Open the issue tracker."
+
+deps-install:
+	$(ensure_runtime_home)
+	@$(UV_SYNC) --group dev
+
+install: deps-install
+	@echo "Environment ready. Use '$(UV_RUN) things-cli' or 'make cli args=...'."
+
+uninstall:
+	@rm -rf $(UV_PROJECT_ENVIRONMENT) $(UV_CACHE_DIR) $(UV_DATA_DIR)
 
 run:
-	@$(PYTHON) -m $(SRC_CORE).$(MAIN)
+	$(ensure_runtime_home)
+	@$(RUN_ENV) $(PYTHON) -m $(SRC_CORE).$(MAIN)
 	@echo "File created: $(DEST)"
 
 open:
 	@open $(DEST)
 
 run-api:
+	$(ensure_runtime_home)
 	@$(PYTHON) -m $(SRC_CORE).$(SERVER)
 
 open-api:
 	@open $(DEST_SRV)
 
 kill-api:
-	@lsof -nti:$(SERVER_PORT) | xargs kill
+	@pids=$$(lsof -nti:$(SERVER_PORT)); \
+	if [ -n "$$pids" ]; then \
+		kill $$pids >/dev/null 2>&1 || echo "Warning: could not stop PID(s): $$pids"; \
+	fi
 
 run-app:
+	$(ensure_runtime_home)
 	@$(PYTHON) -m $(SRC_CORE).$(APP)
 
 cli:
+	$(ensure_runtime_home)
 	@$(PYTHON) -m $(SRC_CORE).$(CLI) $(args)
 
-install:
-	@$(PYTHON) setup.py install
-	@echo "You can now use 'things-cli', 'things-api' and 'things-kanban'"
-
-uninstall:
-	@$(PIP) uninstall -y things3-api
-
-
 test:
-	@type coverage >/dev/null 2>&1 || (echo "Run '$(PIP) install coverage' first." >&2 ; exit 1)
-	@coverage erase
-	@coverage run -a -m $(SRC_TEST).test_things3
-	@coverage run -a -m $(SRC_TEST).test_things3_api
-	@coverage run -a -m $(SRC_TEST).test_things3_cli
-	@coverage run -a -m $(SRC_TEST).test_things3_kanban
-	@coverage report
+	$(ensure_runtime_home)
+	@$(PYTHON) -m coverage erase
+	@$(PYTHON) -m coverage run -a -m $(SRC_TEST).test_things3
+	@$(PYTHON) -m coverage run -a -m $(SRC_TEST).test_things3_api
+	@$(PYTHON) -m coverage run -a -m $(SRC_TEST).test_things3_cli
+	@$(PYTHON) -m coverage run -a -m $(SRC_TEST).test_things3_kanban
+	@$(PYTHON) -m coverage report
 
-.PHONY: app
 app: clean
-	@$(PYTHON) setup.py py2app
-	@hdiutil create dist/tmp.dmg -ov -volname "KanbanView" -fs HFS+ -srcfolder "dist"
-	@hdiutil convert dist/tmp.dmg -format UDZO -o dist/KanbanView.dmg
-	@rm dist/tmp.dmg
-	@open dist
+	$(ensure_runtime_home)
+	@$(UV_ENV) ./scripts/build_app.sh
 
-.PHONY: doc
 doc:
-	@$(PYDOC) $(SRC_CORE).things3
+	@$(PYTHON) -m pydoc $(SRC_CORE).things3
 
-.PHONY: clean
 clean:
 	@rm -f $(DEST)
 	@find . -name \*.pyc -delete
 	@find . -name __pycache__ -delete
-	@rm -rf **/.mypy_cache
-	@rm -rf htmlcov
-	@rm -rf build dist *.egg-info
-	@rm -rf .mypy_cache/
+	@rm -rf .make-home
+	@rm -rf .mypy_cache htmlcov build dist *.egg-info .eggs
 	@rm -f .coverage
-	@rm -rf .eggs
 
 auto-style:
-	@type black >/dev/null 2>&1 || (echo "Run '$(PIP) install black' first." >&2 ; exit 1)
-	@black $(SRC_CORE) $(SRC_TEST) setup.py
-	@type standard >/dev/null 2>&1 || (echo "Run 'npm install -g standard' first." >&2 ; exit 1)
-	@standard --fix resources/*.js
+	@$(UV_RUN) ruff format .
+	@$(UV_RUN) ruff check --fix .
 
-lint: code-style code-lint js-lint css-lint
+lint: code-style code-lint type-check
 
 code-style:
-	@type pycodestyle >/dev/null 2>&1 || (echo "Run '$(PIP) install pycodestyle' first." >&2 ; exit 1)
-	@pycodestyle --exclude=*appstore* $(SRC_CORE) $(SRC_TEST)
+	@$(UV_RUN) ruff format --check .
 
 code-lint:
-	@type pylint >/dev/null 2>&1 || (echo "Run '$(PIP) install pylint' first." >&2 ; exit 1)
-	@type flake8 >/dev/null 2>&1 || (echo "Run '$(PIP) install flake8' first." >&2 ; exit 1)
-	@type mypy >/dev/null 2>&1 || (echo "Run '$(PIP) install mypy' first." >&2 ; exit 1)
-	@type vulture >/dev/null 2>&1 || (echo "Run '$(PIP) install vulture' first." >&2 ; exit 1)
-	@pip3 show pydiatra >/dev/null 2>&1 || (echo "Run '$(PIP) install pydiatra' first." >&2 ; exit 1)
-	@echo "Flake8:" ; $(PYTHON) -m flake8 --max-complexity 10 --exclude=*appstore* $(SRC_CORE) $(SRC_TEST) setup.py
-	@echo "Vulture:" ; $(PYTHON) -m vulture $(SRC_CORE) setup.py .vulture-whitelist
-	@echo "Pydiatra:" ; $(PYTHON) -m pydiatra $(SRC_CORE)/*.py $(SRC_TEST)/*.py  setup.py
-	@echo "Mypy:" ; $(PYTHON) -m mypy --ignore-missing-imports $(SRC_CORE) $(SRC_TEST) setup.py
-	@echo "PyLint:" ; $(PYTHON) -m pylint --ignore-patterns=".*appstore.*" $(SRC_CORE)/*.py $(SRC_TEST)/*.py  setup.py
+	@$(UV_RUN) ruff check .
+
+type-check:
+	@$(UV_RUN) ty check $(SRC_CORE)
 
 css-lint:
 	@type csslint >/dev/null 2>&1 || (echo "Run 'npm install -g csslint' first." >&2 ; exit 1)
@@ -154,33 +153,14 @@ code-count:
 	@type cloc >/dev/null 2>&1 || (echo "Run 'brew install cloc' first." >&2 ; exit 1)
 	@cloc $(SRC_CORE)
 
-deps-install:
-	@#type $(PIPENV) >/dev/null 2>&1 || (echo "Run 'brew install pipenv' first." >&2 ; exit 1)
-	@$(PIP) install -r requirements.txt
-	@#$(PIPENV) install
-
-.PHONY: deps-upgrade
-deps-upgrade: ## Upgrade the dependencies
-	@if type pip-upgrade >/dev/null 2>&1 ; then pip-upgrade --skip-virtualenv-check requirements.txt ; \
-	 else echo "SKIPPED. Run '$(PIP) install pip-upgrade' first." >&2 ; fi
-
 feedback:
 	@open https://github.com/AlexanderWillner/KanbanView/issues
 
 pre-commit:
-	@rm ~/.kanbanviewrc
 	@make clean kill-api
-	@make auto-style lint
-	@make deps-install install 
-	@THINGSDB=resources/demo.sqlite3 things-cli inbox
-	@THINGSDB=resources/demo.sqlite3 make run-api &
-	@make uninstall clean test jpg
-	@THINGSDB=resources/demo.sqlite3 make open-api run open args="today" cli
-	@sleep 2
-	@make kill-api app
-	@THINGSDB=resources/demo.sqlite3 make run-app &
-	@open dist/KanbanView.app
-	@git status
+	@make deps-install auto-style lint
+	@THINGSDB=resources/demo.sqlite3 make run
+	@THINGSDB=resources/demo.sqlite3 make test
 
 png:
 	@type optipng >/dev/null 2>&1 || (echo "Run 'brew install optipng' first." >&2 ; exit 1)
@@ -193,8 +173,8 @@ jpg:
 	@find . -iname "*.jpg" -exec jpegoptim -q {} \;
 
 upload: clean
-	@python3 setup.py sdist bdist_wheel
-	@python3 -m twine upload --repository-url https://upload.pypi.org/legacy/ dist/things3*
+	@$(UV_RUN) python -m build
+	@$(UV_RUN) python -m twine upload dist/things3*
 
 db-to-things:
 	@cp resources/demo.sqlite3 ~/Library/Group\ Containers/JLMPQHK86H.com.culturedcode.ThingsMac/ThingsData-*/Things\ Database.thingsdatabase/main.sqlite

@@ -1,3 +1,4 @@
+doc/*.md
 kanban-static.html
 .DS_Store
 dist
@@ -6,6 +7,10 @@ __pycache__
 *.pyc
 *.egg-info
 .coverage
+.venv/
+.uv-cache/
+.uv-data/
+.make-home/
 .mypy_cache/
 appstore
 bin/things*appstore*
@@ -16,4 +21,3 @@ package-lock.json
 resources/*-shm
 resources/*-wal
 htmlcov
-

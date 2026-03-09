@@ -5,10 +5,9 @@
 
 from __future__ import print_function
 
-
 import xml.etree.ElementTree as ETree
-from xml.etree.ElementTree import Element, SubElement
 from xml.dom import minidom
+from xml.etree.ElementTree import Element, SubElement
 
 
 class Things3OPML:

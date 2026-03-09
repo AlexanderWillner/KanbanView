@@ -5,9 +5,13 @@
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Modern Kanban dashboard for Things 3">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-title" content="KanbanView">
     <meta name="apple-mobile-web-app-status-bar-style" content="black">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="kanban.css">
     <link rel="stylesheet" href="chart.css">
     <link rel="stylesheet" href="fa.min.css">
@@ -33,7 +37,7 @@
   <body>
     <div class="outer-container">
       <div class="header" id="header">
-        <a href="https://kanbanview.app" title="visit website" target="_blank"><img class="logo" src="logo-dark.png" alt="logo" ></a>
+        <a href="https://kanbanview.app" title="visit website" onclick="return handleExternalLink(event, this.href)"><img class="logo" src="logo-dark.png" alt="logo" ></a>
         <div class="onoffswitch">
           <input type="checkbox" name="onoffswitch"
                   class="onoffswitch-checkbox" id="mode"
@@ -53,12 +57,12 @@
             </div>
             <div class="listHeader"><i class="fa fa-archive"> </i> View</div>
             <ul id="viewlist">
-              <a href="#" id="kanban" data-function="kanbanUpdate" onclick="kanbanFilterReset(); kanbanUpdate();" accesskey="1" title="⌃+⎇+1"><li>Kanban</li></a>
-              <a href="#" id="distribution" data-function="statsShowDistribution" onclick="statsShowDistribution();" accesskey="2" title="⌃+⎇+2"><li>Distribution</li></a>
-              <a href="#" id="history" data-function="statsShowHistory" onclick="statsShowHistory();" accesskey="3" title="⌃+⎇+3"><li>History</li></a>
-              <a href="#" id="universe" data-function="statsShowUniverse" onclick="statsShowUniverse();" accesskey="4" title="⌃+⎇+4"><li>Universe</li></a>
-              <a href="#" id="eisenhower" data-function="statsShowMinutes" onclick="statsShowMinutes();" accesskey="5" title="⌃+⎇+5"><li>Eisenhower</li></a>
-              <a href="#" id="seinfeld" data-function="statsShowSeinfeld" onclick="statsShowSeinfeld();" accesskey="6" title="⌃+⎇+6"><li>Seinfeld</li></a>
+              <a href="#" id="kanban" data-function="kanbanUpdate" onclick="kanbanFilterReset(); kanbanUpdate(); return false;" accesskey="1" title="⌃+⎇+1"><li>Kanban</li></a>
+              <a href="#" id="distribution" data-function="statsShowDistribution" onclick="statsShowDistribution(); return false;" accesskey="2" title="⌃+⎇+2"><li>Distribution</li></a>
+              <a href="#" id="history" data-function="statsShowHistory" onclick="statsShowHistory(); return false;" accesskey="3" title="⌃+⎇+3"><li>History</li></a>
+              <a href="#" id="universe" data-function="statsShowUniverse" onclick="statsShowUniverse(); return false;" accesskey="4" title="⌃+⎇+4"><li>Universe</li></a>
+              <a href="#" id="eisenhower" data-function="statsShowMinutes" onclick="statsShowMinutes(); return false;" accesskey="5" title="⌃+⎇+5"><li>Eisenhower</li></a>
+              <a href="#" id="seinfeld" data-function="statsShowSeinfeld" onclick="statsShowSeinfeld(); return false;" accesskey="6" title="⌃+⎇+6"><li>Seinfeld</li></a>
             </ul>
             <div class="listHeader"><i class="fa fa-archive"> </i> Areas</div>
             <ul id="areas" data-ctx="area"></ul>

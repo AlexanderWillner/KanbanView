@@ -1,36 +1,39 @@
 name: Build-Test
 
-on: [push, pull_request]
+on:
+  push:
+  pull_request:
+
 env:
   CI: true
+  UV_CACHE_DIR: .uv-cache
+  XDG_DATA_HOME: .uv-data
+  UV_PROJECT_ENVIRONMENT: .venv
 
 jobs:
   test:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        python-version: ["3.8", "3.9", "3.10", "3.11"]
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
 
     steps:
-      - uses: actions/checkout@v1
+      - uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v1
-        with:
-          python-version: ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
+
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          make deps-install
+        run: make deps-install
+
       - name: Run tests
-        run: |
-          pip install coverage pytest
-          make test
-      - name: "Upload coverage to Codecov"
-        uses: codecov/codecov-action@v3
-        with:
-          fail_ci_if_error: false
+        run: make test
+
       - name: Run lint
-        run: |
-          pip install black pycodestyle pylama pylint flake8 mypy pydocstyle vulture pytest pydiatra
-          sudo npm install -g pyright standard csslint
-          make lint
+        run: make lint

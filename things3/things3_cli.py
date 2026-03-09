@@ -5,15 +5,25 @@
 
 from __future__ import print_function
 
-import sys
 import argparse
-import json
 import csv
+import json
+import sys
 import webbrowser
-import argcomplete  # type: ignore
+from types import ModuleType
+from typing import Any, Callable, cast
+
 import things3
 from things3.things3 import Things3
 from things3.things3_opml import Things3OPML
+
+argcomplete: ModuleType | None = None
+try:
+    import argcomplete as _argcomplete
+except ImportError:  # pragma: no cover - optional shell completion
+    pass
+else:
+    argcomplete = _argcomplete
 
 
 class Things3CLI:
@@ -23,7 +33,6 @@ class Things3CLI:
     print_csv = False
     print_opml = False
     anonymize = False
-    things3 = None
 
     def __init__(self, database=None):
         self.things3 = Things3(database)
@@ -166,7 +175,8 @@ class Things3CLI:
             version=f"%(prog)s (version {things3.__version__})",
         )
 
-        argcomplete.autocomplete(parser)
+        if argcomplete is not None:
+            argcomplete.autocomplete(parser)
 
         return parser
 
@@ -184,7 +194,10 @@ class Things3CLI:
             self.things3.anonymize = self.anonymize
 
             if command in self.things3.functions:
-                func = self.things3.functions[command]
+                func = cast(
+                    Callable[[Things3], list[dict[str, Any]]],
+                    self.things3.functions[command],
+                )
                 self.print_tasks(func(self.things3))
             elif command == "opml":
                 Things3OPML().print_all(self.things3)

@@ -6,24 +6,33 @@
 from __future__ import print_function
 
 import os
-import glob
-import sys
 import signal
-from os import system
+import subprocess
+import sys
 from threading import Thread
-import webview  # type: ignore
-import objc  # type: ignore # pylint: disable=unused-import,import-error # noqa F401
-from things3 import things3_api, things3
+from typing import Any
+
+import webview
+
+from things3 import things3, things3_api
+
+
+class AppBridge:
+    """Bridge methods exposed to the pywebview JavaScript runtime."""
+
+    def open_url(self, url):
+        """Open an external URL via Launch Services."""
+        subprocess.run(
+            ["open", "-b", "com.culturedcode.ThingsMac", str(url)],
+            check=False,
+        )
+        return True
 
 
 class Things3App:
     """App wrapper for simple read-only API for Things 3."""
 
-    database = None
     FILE = "kanban.html"
-    api = None
-    api_thread = None
-    window = None
 
     def open_api(self):
         """Delay opening the browser."""
@@ -31,19 +40,37 @@ class Things3App:
         self.api.main()
 
     def __init__(self, database=None, debug_text=""):
-        database = database or things3.Things3.FILE_DB
-        self.database = next(glob.iglob(os.path.expanduser(database)))
+        self.database = things3.Things3.resolve_database_path(database)
         self.api = things3_api.Things3API(database=self.database, debug_text=debug_text)
+        self.bridge = AppBridge()
+        self.api_thread: Thread | None = None
+        self.window: Any | None = None
 
     def sigterm_handler(self, _signo, _stack_frame):
         """Make sure the server shuts down."""
         print("Sigterm...")
-        self.api.flask_context.shutdown()
+        if self.api.flask_context is not None:
+            self.api.flask_context.shutdown()
+
+    @staticmethod
+    def kill_stale_api_processes():
+        """Stop leftover API listeners before starting the app wrapper."""
+        result = subprocess.run(
+            ["lsof", "-nti:" + str(things3_api.Things3API.port)],
+            capture_output=True,
+            check=False,
+            text=True,
+        )
+        for pid in result.stdout.split():
+            try:
+                os.kill(int(pid), signal.SIGKILL)
+            except (ProcessLookupError, ValueError):
+                pass
 
     def main(self, appstore=False):
         """Run the app."""
         # kill possible zombie processes; can't use psutil in py2app context
-        system("lsof -nti:" + str(things3_api.Things3API.port) + " | xargs kill -9")
+        self.kill_stale_api_processes()
 
         # Make sure the server shuts down
         signal.signal(signal.SIGTERM, self.sigterm_handler)
@@ -54,11 +81,15 @@ class Things3App:
             title="KanbanView",
             url=f"http://{things3_api.Things3API.host}:"
             + f"{things3_api.Things3API.port}/{self.FILE}",
+            js_api=self.bridge,
             width=1280,
             height=650,
             min_size=(1280, 650),
             frameless=False,
         )
+
+        if self.window is None:
+            raise RuntimeError("Could not create the webview window.")
 
         if not appstore:
             self.window.events.closed += advertise
@@ -67,18 +98,21 @@ class Things3App:
 
         try:
             self.api_thread.start()
-            webview.start(self.closing, self.window)  # blocking
-            self.api.flask_context.shutdown()
+            webview.start(self.closing, args=(self.window,))  # blocking
+            if self.api.flask_context is not None:
+                self.api.flask_context.shutdown()
             self.api_thread.join()
         except KeyboardInterrupt:
             print("Shutting down...")
-            self.api.flask_context.shutdown()
-            self.api_thread.join()
+            if self.api.flask_context is not None:
+                self.api.flask_context.shutdown()
+            if self.api_thread is not None:
+                self.api_thread.join()
             sys.exit(0)
 
     def closing(self, _window=None):
         """Close the app"""
-        if not _window:
+        if not _window and self.window is not None:
             self.window.destroy()
             # self.api.flask_context.shutdown()
             # self.api_thread.join()
@@ -94,15 +128,24 @@ def advertise():
     )
     title = "KanbanView"
     url = "https://kanbanview.app"
-    system(
-        """osascript -e ' """
-        + f"""set dialog to (display dialog "{text}" """
-        + """buttons {"Buy", "Later"} default button 1 """
-        + """giving up after 10 """
-        + f"""with title "{title}" """
-        + """with icon POSIX file "resources/icon.icns")' """
-        + """-e 'if the button returned of the result is "Buy" then' """
-        + f"""-e 'do shell script "open {url}"' -e 'end if'"""
+    subprocess.run(
+        [
+            "osascript",
+            "-e",
+            (
+                f'set dialog to (display dialog "{text}" '
+                'buttons {"Buy", "Later"} default button 1 '
+                f'giving up after 10 with title "{title}" '
+                'with icon POSIX file "resources/icon.icns")'
+            ),
+            "-e",
+            'if the button returned of the result is "Buy" then',
+            "-e",
+            f'do shell script "open {url}"',
+            "-e",
+            "end if",
+        ],
+        check=False,
     )
 
 
